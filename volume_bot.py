@@ -3,18 +3,15 @@ import time
 import requests
 
 # ---------- AJUSTES (puedes cambiarlos) ----------
-TOP_N = 200            # cuántos pares USDT vigilar
-RATIO = 3.0            # volumen mínimo vs. el normal (x veces)
-MIN_QUOTE_VOL = 50_000 # volumen mínimo de la vela en USDT
-INTERVAL = "5m"        # tamaño de vela
-LOOKBACK = 20          # velas para calcular el volumen normal
-BREAKOUT_N = 20        # velas para el máximo/mínimo a romper
-SOLO_LARGOS = False    # True = ignora las rupturas a la baja
-MAX_ALERTS = 10        # máximo de monedas por mensaje
+TOP_N = 200
+RATIO = 4.0
+MIN_QUOTE_VOL = 50_000
+INTERVAL = "5m"
+LOOKBACK = 20
+MAX_ALERTS = 10
 # --------------------------------------------------
 
-
-BASE = "https://data-api.binance.vision
+BASE = "https://data-api.binance.vision/api/v3"
 TOKEN = os.environ["TELEGRAM_TOKEN"].strip()
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"].strip()
 STABLES = {"USDC", "FDUSD", "TUSD", "USDP", "DAI", "EUR", "AEUR", "USDE", "XUSD", "BFUSD"}
@@ -52,37 +49,24 @@ def main():
     pares.sort(key=lambda t: float(t["quoteVolume"]), reverse=True)
     pares = pares[:TOP_N]
 
-    n = max(LOOKBACK, BREAKOUT_N)
     alertas = []
     for t in pares:
         symbol = t["symbol"]
         try:
-            k = get("klines", symbol=symbol, interval=INTERVAL, limit=n + 2)
-            if len(k) < n + 2:
+            k = get("klines", symbol=symbol, interval=INTERVAL, limit=LOOKBACK + 2)
+            if len(k) < LOOKBACK + 2:
                 continue
-            cerrada = k[-2]  # última vela ya cerrada
-
-            # 1) Volumen alto
-            hist_vol = k[-2 - LOOKBACK:-2]
+            cerrada = k[-2]
+            historial = k[-2 - LOOKBACK:-2]
             vol = float(cerrada[7])
-            promedio = sum(float(v[7]) for v in hist_vol) / LOOKBACK
+            promedio = sum(float(v[7]) for v in historial) / LOOKBACK
             if promedio <= 0 or vol < MIN_QUOTE_VOL:
                 continue
             ratio = vol / promedio
-            if ratio < RATIO:
-                continue
-
-            # 2) Ruptura de máximo o mínimo
-            hist_px = k[-2 - BREAKOUT_N:-2]
-            maximo = max(float(v[2]) for v in hist_px)
-            minimo = min(float(v[3]) for v in hist_px)
-            abre, cierra = float(cerrada[1]), float(cerrada[4])
-            cambio = (cierra - abre) / abre * 100
-
-            if cierra > maximo:
-                alertas.append((ratio, "LARGO", symbol, vol, cambio, cierra, maximo))
-            elif cierra < minimo and not SOLO_LARGOS:
-                alertas.append((ratio, "CORTO", symbol, vol, cambio, cierra, minimo))
+            if ratio >= RATIO:
+                abre, cierra = float(cerrada[1]), float(cerrada[4])
+                cambio = (cierra - abre) / abre * 100
+                alertas.append((ratio, symbol, vol, cambio))
         except Exception as e:
             print(f"Error con {symbol}: {e}")
         time.sleep(0.05)
@@ -91,17 +75,15 @@ def main():
     manual = os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
 
     if alertas:
-        lineas = [f"🔔 Ruptura con volumen (vela de {INTERVAL})"]
-        for ratio, lado, symbol, vol, cambio, cierra, nivel in alertas[:MAX_ALERTS]:
-            icono = "🟢" if lado == "LARGO" else "🔴"
-            palabra = "máximo" if lado == "LARGO" else "mínimo"
+        lineas = [f"🔔 Volumen alto (vela de {INTERVAL})"]
+        for ratio, symbol, vol, cambio in alertas[:MAX_ALERTS]:
+            flecha = "🟢" if cambio >= 0 else "🔴"
             lineas.append(
-                f"{icono} {lado} {symbol}: x{ratio:.1f} del normal · {fmt_money(vol)} · "
-                f"{cambio:+.1f}%\n   cerró en {cierra:g}, rompió el {palabra} de {BREAKOUT_N} velas ({nivel:g})"
+                f"{flecha} {symbol}: x{ratio:.1f} del normal · {fmt_money(vol)} · {cambio:+.1f}%"
             )
         send("\n".join(lineas))
     elif manual:
-        send(f"✅ Bot funcionando. Revisé {len(pares)} pares y ninguno tiene ruptura con volumen ahora.")
+        send(f"✅ Bot funcionando. Revisé {len(pares)} pares y ninguno tiene volumen alto ahora.")
 
     print(f"Revisados {len(pares)} pares, {len(alertas)} alertas.")
 
