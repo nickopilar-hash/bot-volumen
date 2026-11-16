@@ -13,7 +13,7 @@ SOLO_LARGOS = False    # True = ignora las rupturas a la baja
 MAX_ALERTS = 10        # máximo de monedas por mensaje
 # --------------------------------------------------
 
-BASE = "https://data-api.binance.vision/api/v3"
+BASE = "https://fapi.binance.com/fapi/v1"
 TOKEN = os.environ["TELEGRAM_TOKEN"].strip()
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"].strip()
 STABLES = {"USDC", "FDUSD", "TUSD", "USDP", "DAI", "EUR", "AEUR", "USDE", "XUSD", "BFUSD"}
